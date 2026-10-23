@@ -1,0 +1,5 @@
+processed_data/
+raw_data/
+scripts/step3_bulked_segregant_analysis_files/
+scripts/*.csv
+scripts/.ipynb_checkpoints/
