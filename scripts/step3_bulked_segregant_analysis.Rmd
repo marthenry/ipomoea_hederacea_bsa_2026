@@ -1,0 +1,569 @@
+---
+title: "Ipomoea_hederacea_BSA_2026"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This is a script for a Bulked Segregant Analysis (BSA) of ivyleaf morning glory (Ipomoea hederacea) using a script from Mansfeld and Grumet, 2018, who developed the package QTLseqr. This package uses methods from Magwene et al. 2011 and Takagi et al., 2013 to conduct the BSA.
+
+This script also maps significant SNPs to gene IDs from a genome annotation developed by Amanda Peake.
+
+The two bulks are 4/5 lobed leaves (the "high" bulk) and 3 lobed leaves ("low" bulk).
+
+```{r install packages}
+##Run this code chunk if you have not installed either of these packages. If you have, comment them out.
+#Download and install the devtools package
+#install.packages("devtools")
+#Download the QTLseqr package from GitHub
+#devtools::install_github("bmansfeld/QTLseqr")
+#install.packages("BiocManager")
+#BiocManager::install("GenomicRanges")
+#install.packages(c("snpsettest", "ggplot2", "dplyr"))
+```
+
+
+```{r loading packages}
+#load the packages
+library(QTLseqr)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(GenomicRanges)
+library(snpsettest)
+```
+
+```{r Reading in the data and filtering by read depth}
+#Set sample and file names
+# HighBulk = "4_5_lobed_pool_S37_analysis_ready" #4/5-Lobed is High
+# LowBulk = "3_lobed_pool_S36_analysis_ready"  #3-Lobed is Low
+# file = "../processed_data/qtlseqr_input_subsampled.tsv" #Table from GATK
+# N = 15 #the number of chromosomes to look at
+# chrom_prefix = "Chr"
+# GTF = "../raw_data/reference_genome/I.hed-braker-rna-orthodb.gtf"
+# 
+# #Choose which chromosomes will be included in the analysis (i.e. exclude smaller contigs)
+# chroms = paste0(rep(chrom_prefix, N), 1:N)
+# 
+# #Import SNP data from file
+# df =
+#     importFromGATK(
+#         file = file,
+#         highBulk = HighBulk,
+#         lowBulk = LowBulk,
+#         chromList=chroms
+#     )
+# 
+# #Read depth histogram to help decide what could be a good cut-off for removing SNPs
+# ggplot(data = df) + 
+#     geom_histogram(aes(x = DP.HIGH + DP.LOW))
+# 
+# #Filter by reference allele frequency
+# ggplot(data = df) +
+#     geom_histogram(aes(x = REF_FRQ))
+# 
+# #Check the per-bulk distributions. You should, in theory, get two small peaks at the two extremes and a Gaussian distribution around 0.5
+# ggplot(data = df) +
+#     geom_histogram(aes(x = SNPindex.HIGH)) +
+#     ggtitle("High Bulk")
+# 
+# ggplot(data = df) +
+#     geom_histogram(aes(x = SNPindex.LOW)) +
+#     ggtitle("Low Bulk")
+# 
+# #Filter SNPs based on some criteria. See section below about using the filterSNPs function for more information.
+# df_filt =
+#     filterSNPs(
+#         SNPset = df,
+#         refAlleleFreq = 0.20,
+#         minTotalDepth = 100,
+#         maxTotalDepth = 400,
+#         minSampleDepth = 40,
+#         minGQ = 99
+#     )
+# 
+# #Just to save time later, save the workspace image:
+# save.image("../processed_data/20260722_subsampled_image.RData")
+
+``` 
+
+```{r Loading the image}
+load("../processed_data/20260722_subsampled_image.RData")
+```
+
+```{r Running the analyses}
+##Run G' analysis
+df_filt_Gprime = runGprimeAnalysis(SNPset = df_filt,
+                             windowSize = 1e6,
+                             outlierFilter = "deltaSNP",
+                             filterThreshold = 0.1)
+
+#G' distributions with different filters
+plotGprimeDist(SNPset = df_filt_Gprime, outlierFilter = "Hampel", binwidth = 0.1) +
+  xlim(0, 10)
+plotGprimeDist(SNPset =df_filt_Gprime, outlierFilter = "deltaSNP", filterThreshold = 0.1, binwidth = 0.1) +
+  xlim(0, 10)
+
+#Get QTL regions from G'
+qtl_regions_Gprime = getQTLTable(
+    SNPset = df_filt_Gprime,
+    method = "Gprime",
+    alpha = 0.01,
+    export = FALSE)
+
+##Run QTLseq analysis
+df_filt_QTLseq= runQTLseqAnalysis(
+    SNPset = df_filt,
+    windowSize = 1e6,
+    popStruc = "F2",
+    bulkSize = c(71, 71),
+    replications = 10000,
+    intervals = c(95, 99))
+
+#Get QTL regions from QTLseq
+qtl_regions_QTLseq = getQTLTable(
+    SNPset = df_filt_QTLseq,
+    method = "QTLseq",
+    interval = 95,
+    export = FALSE)
+```
+
+```{r Getting CSVs for QTLs}
+
+#Export summary CSV for Gprime QTLs
+getQTLTable(
+    SNPset = df_filt_Gprime,
+    method = "Gprime",
+    alpha = 0.01,
+    export = TRUE,
+    fileName = "../processed_data/bsa_qtl_Gprime.csv")
+
+#Export summary CSV for deltaSNP QTLs
+getQTLTable(
+    SNPset = df_filt_QTLseq,
+    method = "QTLseq",
+    interval = 95,
+    export = TRUE,
+    fileName = "../processed_data/bsa_qtl_delta_snp.csv")
+
+```
+
+```{r Plotting the results}
+##Plot Gprime
+
+#png version
+png("step3_bulked_segregant_analysis_files/g_prime_plot_2026.png", units = "in", width = 8, height = 5, res = 300)
+(gplot = plotQTLStats(
+    SNPset = df_filt_Gprime,
+    var = "Gprime",
+    plotThreshold = TRUE,
+    q = 0.01) +
+    facet_wrap(vars(CHROM), nrow=3, ncol=5) +
+    theme_minimal() +
+    theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+    theme(axis.text.x = element_text(angle = 30, size=7), axis.text.y= element_text(size=9),
+          axis.title.y=element_text(size = 14), axis.title.x=element_text(size = 14))+
+    theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin=margin(), size = 10),
+        panel.spacing=unit(1, "lines"))
+)
+dev.off()
+
+#tiff verion
+tiff("step3_bulked_segregant_analysis_files/g_prime_plot_2026.tiff", units = "in", width = 8, height = 5, res = 300)
+(gplot = plotQTLStats(
+    SNPset = df_filt_Gprime,
+    var = "Gprime",
+    plotThreshold = TRUE,
+    q = 0.01) +
+    facet_wrap(vars(CHROM), nrow=3, ncol=5) +
+    theme_minimal() +
+    theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+    theme(axis.text.x = element_text(angle = 30, size=7), axis.text.y= element_text(size=9),
+          axis.title.y=element_text(size = 14), axis.title.x=element_text(size = 14))+
+    theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin=margin(), size = 10),
+        panel.spacing=unit(1, "lines"))
+)
+dev.off()
+
+##Plot deltaSNP
+
+#png version
+png("step3_bulked_segregant_analysis_files/snp_index_2026.png", units="in", width=8, height=5, res=300)
+plotQTLStats(
+    SNPset = df_filt_QTLseq,
+    var = "deltaSNP",
+    plotIntervals = TRUE)+
+  facet_wrap(vars(CHROM), nrow=3, ncol=5) +
+  theme_minimal() +
+  theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+  ylim(c(-0.4,0.4))+
+  theme(axis.text.x = element_text(angle = 30, size=7), axis.text.y= element_text(size=9),
+        axis.title.y=element_text(size = 14), axis.title.x=element_text(size = 14),
+        legend.position = "none")+
+  theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin=margin(), size = 10),
+        panel.spacing=unit(1, "lines"))
+dev.off()
+
+#tiff version
+tiff("step3_bulked_segregant_analysis_files/snp_index_2026.tiff", units="in", width=8, height=5, res=300)
+plotQTLStats(
+    SNPset = df_filt_QTLseq,
+    var = "deltaSNP",
+    plotIntervals = TRUE)+
+  facet_wrap(vars(CHROM), nrow=3, ncol=5) +
+  theme_minimal() +
+  theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+  ylim(c(-0.4,0.4))+
+  theme(axis.text.x = element_text(angle = 30, size=7), axis.text.y= element_text(size=9),
+        axis.title.y=element_text(size = 14), axis.title.x=element_text(size = 14),
+        legend.position = "none")+
+  theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin=margin(), size = 10),
+        panel.spacing=unit(1, "lines"))
+dev.off()
+```
+
+```{r Plotting the QTL on Chromosome 2}
+#Making a dataframe with only chr 2 QTL
+qtl_chr_2 <- qtl_regions_QTLseq[1,]
+
+#png version
+png("step3_bulked_segregant_analysis_files/chr2_plot_2026.png", units="in", width=6, height=4, res=300)
+plotQTLStats(
+    SNPset = df_filt_QTLseq,
+    subset = "Chr2",
+    var = "deltaSNP",
+    plotIntervals = TRUE) +
+  theme_minimal() +
+  theme(plot.title=element_text(size=30)) +
+  theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+  theme(axis.text.x = element_text(angle = 0, size=10), axis.text.y= element_text(size=10))+
+  theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin=margin()),
+        panel.spacing=unit(1, "lines")) +
+    geom_rect(data = qtl_chr_2, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "gold1", alpha = .5)
+dev.off()
+
+
+#tiff version
+tiff("step3_bulked_segregant_analysis_files/chr2_plot_2026.tiff", units="in", width=6, height=4, res=300)
+plotQTLStats(
+    SNPset = df_filt_QTLseq,
+    subset = "Chr2",
+    var = "deltaSNP",
+    plotIntervals = TRUE) +
+  theme_minimal() +
+  theme(plot.title=element_text(size=30)) +
+  theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+  theme(axis.text.x = element_text(angle = 0, size=10), axis.text.y= element_text(size=10))+
+  theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin=margin()),
+        panel.spacing=unit(1, "lines")) +
+    geom_rect(data = qtl_chr_2, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "gold1", alpha = .5)
+dev.off()
+```
+
+
+```{r Plotting the QTL on Chromosome 2 with indel identified by Amanda Peake}
+##Plotting the indel:
+#The QTL identified from the BSA is in yellow
+#The indel region is solid slateblue, and the leading SNPs are dotted purple lines
+
+##Making dataframe with indel coordinates
+start <- c(3625421)
+end <- c(3742102)
+indel_coords <- data.frame(start, end)
+
+library(scales)
+#png version
+png("step3_bulked_segregant_analysis_files/indel_plot_2026.png", units = "in", width = 6, height = 4, res = 300)
+plotQTLStats(
+    SNPset = df_filt_QTLseq,
+    subset = "Chr2",
+    var = "deltaSNP",
+    plotIntervals = TRUE) +
+  theme_minimal() +
+  theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+  theme(axis.text.x = element_text(size=12, vjust = 1), axis.text.y= element_text(size=12),
+  axis.title.x = element_text(size = 14, vjust = 1),
+  axis.title.y = element_text(size = 14, vjust = -0.5)) +
+  theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin=margin()),
+        panel.spacing=unit(1, "lines")) +
+  xlab('Position (Mb)')+
+  geom_line(aes(x = POS, y = CI_95), color = '#1fbcb8', size = 0.6) +
+  geom_line(aes(x = POS, y = CI_99), color = '#f8766b', size = 0.6) +
+  geom_line(aes(x = POS, y = CI_95*-1), color = '#1fbcb8', size = 0.6) +
+  geom_line(aes(x = POS, y = CI_99*-1), color = '#f8766b', size = 0.6) +
+  geom_rect(data = indel_coords, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "dodgerblue1", alpha = .6) +
+  geom_rect(data = qtl_chr_2, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "gold1", alpha = .4) +
+  geom_vline(xintercept = 3496407, color = 'dodgerblue4', linetype = 5) +
+  geom_vline(xintercept = 3788962, color = 'dodgerblue4', linetype = 5) +
+  ylim(c(-0.31,0.31))+
+  scale_x_continuous(labels=label_number(),limits = c(2500000,6000000)) +
+  scale_y_continuous(n.breaks = 6, labels=label_number(),limits = c(-0.31,0.31))
+dev.off()
+
+#tiff version
+tiff("step3_bulked_segregant_analysis_files/indel_plot_2026.tiff", units="in", width=6, height=4, res=300)
+plotQTLStats(
+    SNPset = df_filt_QTLseq,
+    subset = "Chr2",
+    var = "deltaSNP",
+    plotIntervals = TRUE) +
+  theme_minimal() +
+  theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+  theme(axis.text.x = element_text(size=12, vjust = 1), axis.text.y= element_text(size=12),
+  axis.title.x = element_text(size = 14, vjust = 1),
+  axis.title.y = element_text(size = 14, vjust = -0.5)) +
+  theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin=margin()),
+        panel.spacing=unit(1, "lines")) +
+  xlab('Position (Mb)')+
+  geom_line(aes(x = POS, y = CI_95), color = '#1fbcb8', size = 0.6) +
+  geom_line(aes(x = POS, y = CI_99), color = '#f8766b', size = 0.6) +
+  geom_line(aes(x = POS, y = CI_95*-1), color = '#1fbcb8', size = 0.6) +
+  geom_line(aes(x = POS, y = CI_99*-1), color = '#f8766b', size = 0.6) +
+  geom_rect(data = indel_coords, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "dodgerblue1", alpha = .6) +
+  geom_rect(data = qtl_chr_2, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "gold1", alpha = .4) +
+  geom_vline(xintercept = 3496407, color = 'dodgerblue4', linetype = 5) +
+  geom_vline(xintercept = 3788962, color = 'dodgerblue4', linetype = 5) +
+  ylim(c(-0.31,0.31))+
+  scale_x_continuous(labels=label_number(),limits = c(2500000,6000000)) +
+  scale_y_continuous(n.breaks = 6, labels=label_number(),limits = c(-0.31,0.31))
+dev.off()
+
+```
+
+```{r Plotting Chromosome 4 QTL}
+#Making a dataframe with only chr 2 QTL
+qtl_chr_4 <- qtl_regions_QTLseq[2,]
+
+#png version
+png("step3_bulked_segregant_analysis_files/chr4_plot_2026.png", units="in", width=6, height=4, res=300)
+plotQTLStats(
+    SNPset = df_filt_QTLseq,
+    subset = "Chr4",
+    var = "deltaSNP",
+    plotIntervals = TRUE) +
+  theme_minimal() +
+  theme(plot.title=element_text(size=30)) +
+  theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+  theme(axis.text.x = element_text(angle = 0, size=10), axis.text.y= element_text(size=10))+
+  theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin=margin()),
+        panel.spacing=unit(1, "lines")) +
+    geom_rect(data = qtl_chr_4, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "gold1", alpha = .5)
+dev.off()
+
+#tiff version
+tiff("chr4_plot.tiff", units="in", width=6, height=4, res=300)
+plotQTLStats(
+    SNPset = df_filt_QTLseq,
+    subset = "Chr4",
+    var = "deltaSNP",
+    plotIntervals = TRUE) +
+  theme_minimal() +
+  theme(plot.title=element_text(size=30)) +
+  theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+  theme(axis.text.x = element_text(angle = 0, size=10), axis.text.y= element_text(size=10))+
+  theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin=margin()),
+        panel.spacing=unit(1, "lines")) +
+    geom_rect(data = qtl_chr_4, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "gold1", alpha = .5)
+dev.off()
+
+```
+
+```{r}
+#Plotting 2 and 4 together
+#png version
+png("step3_bulked_segregant_analysis_files/chr2_4_plot_2026.png", units="in", width=7, height=7, res=300)
+plotQTLStats(
+    SNPset = df_filt_QTLseq,
+    subset = c("Chr2", "Chr4"),
+    var = "deltaSNP",
+    plotIntervals = TRUE) +
+  theme_minimal() +
+  facet_wrap(vars(CHROM), nrow=2, ncol=1) +
+  theme(plot.title = element_text(size=30)) +
+  theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+  theme(axis.text.x = element_text(angle = 0, size=10), axis.text.y= element_text(size=10))+
+  theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin = margin()),
+        panel.spacing = unit(1, "lines")) +
+    geom_rect(data = qtl_chr_2, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "gold1", alpha = .5) +
+    geom_rect(data = qtl_chr_4, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "gold1", alpha = .5) +
+    scale_y_continuous(n.breaks = 6, labels=label_number(),limits = c(-0.31,0.31))
+dev.off()
+
+#tiff version
+tiff("step3_bulked_segregant_analysis_files/chr2_4_plot_2026.tiff", units="in", width=6, height=7.5, res=300)
+plotQTLStats(
+    SNPset = df_filt_QTLseq,
+    subset = c("Chr2", "Chr4"),
+    var = "deltaSNP",
+    plotIntervals = TRUE) +
+  theme_minimal() +
+  facet_wrap(vars(CHROM), nrow=2, ncol=1) +
+  theme(plot.title = element_text(size=30)) +
+  theme(panel.grid = element_line(color = "#FFFFFF", size = 0)) +
+  theme(axis.text.x = element_text(angle = 0, size=10), axis.text.y= element_text(size=10))+
+  theme(panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA),
+        strip.text=element_text(margin = margin()),
+        panel.spacing = unit(1, "lines")) +
+    geom_rect(data = qtl_chr_2, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "gold1", alpha = .5) +
+    geom_rect(data = qtl_chr_4, aes(xmin = start, xmax = end), ymin = -1, ymax = 1, fill = "gold1", alpha = .5) +
+    scale_y_continuous(n.breaks = 6, labels=label_number(),limits = c(-0.35,0.31))
+dev.off()
+
+```
+
+```{r Mapping significant SNPs to genes IDs from annotated I. hederacea genome}
+
+#Reading in GTF file (annotated genome)
+gtf <- read.table(GTF, sep="\t", header=FALSE)
+#Renaming columns
+colnames(gtf) <- c("chr", "augustus", "mol_type", "start", "end", "score", "strand", "blah", "gene.id")
+#Only selecting genes from molecular type
+gtf <- gtf[gtf$mol_type=="gene",]
+
+#Taking tricubeDeltaSNP values greater than 95% confidence interval
+sig_df <- df_filt_QTLseq[df_filt_QTLseq$tricubeDeltaSNP >= -1*df_filt_QTLseq$CI_95,]
+
+#Making an id column with chromosome and position
+sig_df$id <- paste(sig_df$CHROM, '_', sig_df$POS, sep="")
+colnames(sig_df)[1:2] = c('chr', 'pos')
+
+#Mapping SNPS to genes with 20kb on either side
+mapsnp <- map_snp_to_gene(sig_df, gtf, extend_start = 20, extend_end = 20)
+
+#Merging significant SNPS dataframe to SNP map dataframe by id
+comb_df <- merge(sig_df, mapsnp$map, by="id")
+
+#Rename chr.x and pos.x, because by merging the two dataframes there are two of each column
+colnames(comb_df)[2:3] = c('chr', 'pos')
+
+#Now you have a list of all of the significant genes in your QTLs!
+#write.csv(comb_df, "sig_gene_hits_2026.csv")
+
+```
+
+```{r Mapping A. thaliana BLAST hits to I. hederacea}
+#Short form: at = Arabadopsis thaliana
+
+#Only need to use a few columns
+comb_df <- comb_df[,c("gene.id", "id", "chr", "pos", "deltaSNP", "CI_95", "gene.start", "gene.end")]
+
+#Rename gene.id column so we can merge dataframes later
+colnames(comb_df)[colnames(comb_df) == "gene.id"] <- "ref_gene_id"
+
+#Reading the Arabidopsis.csv
+at_df <- read.csv("../raw_data/reference_genome/20260305_Ihederacea_araport11_diamond_moresensitive.tsv", header = TRUE, sep = "\t")
+
+#Now merge the comb_df and at_df dataframes by ref_gene_id
+at_merged_df <- merge(comb_df, at_df, by = "ref_gene_id", all.x = TRUE)
+
+#Filter for best evalues for any given gene id
+at_best_hits <- at_merged_df %>%
+  group_by(ref_gene_id) %>%
+  filter(evalue == min(evalue))
+
+#Remove . from repo_accession
+repo_accession = sapply(at_best_hits$repo_accession, function(x) strsplit(x, ".", fixed = TRUE)[[1]][1])
+at_best_hits$repo_accession <- repo_accession
+
+#Make new dataframe with unique accession IDs
+at_accession_unique <- distinct(at_best_hits, repo_accession, .keep_all = TRUE)
+
+#Only take columns we need
+at_accession_unique <- at_accession_unique[,c(1,2,3,4,5,6,7,8,9,10,11,12,13,14)]
+
+#Split chromosome and position into two columns
+holder <- data.frame(t(data.frame(strsplit(at_accession_unique$id, "_"))))
+at_accession_unique$chr <- holder$X1
+at_accession_unique$pos <- holder$X2
+
+#Make csv
+#write.csv(at_accession_unique, "at_accession_ids_unique_2026.csv")
+#Use this CSV to look up genes from the TAIR database.
+#For tomato, we'll merge the tomato gene spreadsheet that I downloaded, so there's an extra step later on.
+
+```
+
+```{r Are there any SNPs within genes? Or are they all just in the window surrounding the gene?}
+
+
+snps_in_genes <- subset(at_accession_unique, pos >= at_accession_unique$gene.start & pos <= at_accession_unique$gene.end)
+
+
+```
+
+
+```{r Mapping tomato BLAST hits to I. hederacea}
+##Short form: sl = Solanum lycopersicum
+
+#Reading the tomato .csv
+# sl_df <- read.csv("../raw_data/reference_genome/20260305_Ihederacea_hits_s-lycopersicum-itag4.0_moresensitive.tsv", header = TRUE, sep = "\t")
+# 
+# #Now merge the comb_df and at_df dataframes
+# sl_merged_df <- merge(comb_df, sl_df, by = "ref_gene_id", all.x = TRUE)
+# 
+# #Filter by best evalues for any given gene id
+# sl_best_hits <- sl_merged_df %>%
+#   group_by(ref_gene_id) %>%
+#   filter(evalue == min(evalue))
+# 
+# #Remove . from repo_accession
+# repo_accession = sapply(sl_best_hits$repo_accession, function(x) strsplit(x, ".", fixed = TRUE)[[1]][1])
+# sl_best_hits$repo_accession <- repo_accession
+# 
+# #Now merge with tomato gene annotations
+# #First read in table
+# sl_anno <- read.table("../raw_data/reference_genome/ITAG4.0_descriptions.txt", sep = "\t", comment.char = "", quote = "")
+# #Rename columns
+# colnames(sl_anno) <- c("repo_accession", "desc")
+# #Remove . from repo_accession
+# repo_accession = sapply(sl_anno$repo_accession, function(x) strsplit(x, ".", fixed = TRUE)[[1]][1])
+# sl_anno$repo_accession <- repo_accession
+# 
+# #Merge
+# sl_anno_merged <- merge(sl_best_hits, sl_anno, by = "repo_accession", all.x = TRUE)
+# 
+# #Take unique accessions
+# sl_accession_unique <- distinct(sl_anno_merged, repo_accession, .keep_all = TRUE)
+# sl_accession_unique <- (sl_accession_unique[,c(1,2,4,5,8,9,22)])
+# 
+# #Make csv
+# write.csv(sl_accession_unique, "sl_accession_ids_unique_2026.csv")
+
+```
+
+```{r Merging Arabidopsis and tomato by ref_gene_id}
+
+# genes_merged <- merge(sl_accession_unique, at_accession_unique, by = "ref_gene_id")
+# 
+# genes_merged <- genes_merged[,c(1,7,2,12,13,14)]
+# 
+# colnames(genes_merged) <- c("ref_gene_id", "tomato_desc", "sl_accession_id", "at_accession_id","at_long_desc","chr")
+# 
+# write.csv(genes_merged, "genes_merged_2026.csv")
+
+```

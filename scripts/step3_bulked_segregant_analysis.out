@@ -1,0 +1,24 @@
+
+
+processing file: step3_bulked_segregant_analysis.Rmd
+1/29                                                                           
+2/29 [setup]                                                                   
+3/29                                                                           
+4/29 [install packages]                                                        
+5/29                                                                           
+6/29 [loading packages]                                                        
+7/29                                                                           
+8/29 [Loading the image]                                                       
+9/29                                                                           
+10/29 [Running the analyses]                                                    
+11/29                                                                           
+12/29 [Getting CSVs for QTLs]                                                   
+13/29                                                                           
+14/29 [Plotting the results]                                                    
+15/29                                                                           
+16/29 [Plotting the QTL on Chromosome 2 with indel identified by Amanda Peake]  
+Error:
+! object 'qtl_regions' not found
+
+Quitting from step3_bulked_segregant_analysis.Rmd:193-267 [Plotting the QTL on Chromosome 2 with indel identified by Amanda Peake]
+Execution halted
