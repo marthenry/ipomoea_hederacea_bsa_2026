@@ -3,7 +3,7 @@ _Ipomoea hederacea_ bulked segregant analysis workflow
 Overview
 This repository contains scripts used to conduct a bulked segregant analysis to investigate the genetic basis of extra-lobing in ivyleaf morning glory.
 
-Repository structure:
+Project structure:
 - raw data: reference genome and compressed ORA data
 - processed data: all intermediate files (fastqc, trimming, aligning, etc)
 - scripts: all scripts and visualizations
